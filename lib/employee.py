@@ -1,6 +1,5 @@
 # lib/employee.py
 from __init__ import CURSOR, CONN
-from department import Department
 
 
 class Employee:
@@ -8,7 +7,7 @@ class Employee:
     # Dictionary of objects saved to the database.
     all = {}
 
-    def __init__(self, name, job_title, department_id, id=None):
+    def __init__(self, name, job_title,department_id, id=None):
         self.id = id
         self.name = name
         self.job_title = job_title
@@ -16,7 +15,7 @@ class Employee:
 
     def __repr__(self):
         return (
-            f"<Employee {self.id}: {self.name}, {self.job_title}, " +
+            f"<Employee {self.id}: {self.name}, {self.job_title}>"+
             f"Department ID: {self.department_id}>"
         )
 
@@ -58,8 +57,15 @@ class Employee:
         self.id = CURSOR.lastrowid
         type(self).all[self.id] = self
 
+    @classmethod
+    def create(cls, name, job_title, department_id):
+        """ Initialize a new Employee object and save the object to the database """
+        employee = cls(name, job_title, department_id)
+        employee.save()
+        return employee
+
     def update(self):
-        """Update the table row corresponding to the current Employee instance."""
+        """Update the table row corresponding to the current Employee object."""
         sql = """
             UPDATE employees
             SET name = ?, job_title = ?, department_id = ?
@@ -87,12 +93,6 @@ class Employee:
         # Set the id to None
         self.id = None
 
-    @classmethod
-    def create(cls, name, job_title, department_id):
-        """ Initialize a new Employee instance and save the object to the database """
-        employee = cls(name, job_title, department_id)
-        employee.save()
-        return employee
 
     @classmethod
     def instance_from_db(cls, row):

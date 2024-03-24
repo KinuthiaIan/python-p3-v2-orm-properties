@@ -1,9 +1,8 @@
-# ORM Validation and Properties : Code-Along
+# Mapping Object Relationships : Code-Along
 
 ## Learning Goals
 
-- Evolve attributes to properties.
-- Adapt ORM methods to validate object state with properties
+- Implement ORM methods to manage a one-to-many relationship between classes.
 
 ---
 
@@ -11,27 +10,21 @@
 
 - **Object-Relational Mapping (ORM)**: a programming technique that provides a
   mapping between an object-oriented data model and a relational database model.
-- **Attribute**: variables that belong to an object.
-- **Property**: attributes that are controlled by methods.
-- **Decorator**: function that takes another function as an argument and returns
-  a new function with added functionality.
 
 ---
 
 ## Introduction
 
-Let's update our company data model to add some constraints on the `Department`
-and `Employee` attributes:
+In this lesson, we'll implement a one-to-many relationship between departments
+and employees:
 
-- The `Department` name and location must be non-empty strings.
-- The `Employee` name and and job title must be non-empty strings.
-- The `Employee` department_id must be a foreign key reference to a `Department`
-  object that has been persisted to the database.
+- An employee works in one department.
+- A department has many employees.
 
-We'll evolve the attributes to be managed by property methods, with setter
-methods that ensure the attributes are assigned valid values.
+![company erd](https://curriculum-content.s3.amazonaws.com/7134/python-p3-v2-orm/department_employee_erd.png)
 
----
+Let's assume each employee works for exactly one department. The relationship
+represents composition since an employee must be associated with a department.
 
 ## Code Along
 
@@ -45,63 +38,70 @@ pipenv install
 pipenv shell
 ```
 
-## Evolve `Department` attributes to properties
+The `lib` folder contains starter code for the `Department` and `Employee`
+classes. Both classes include ORM methods for mapping the individual class to a
+corresponding table in the database:
 
-We'll start by evolving the `Department` class to add property methods to manage
-the `name` and `location` attributes, as shown in the code below. The setter
-methods will check for non-empty string values prior to updating the object
-state:
+| Python Class | Relational Database Table |
+| ------------ | ------------------------- |
+| Department   | departments               |
+| Employee     | employees                 |
 
-```py
-from __init__ import CURSOR, CONN
+The one-to-many relationship between `Department` and `Employee` is **not**
+implemented in the starter code. In this lesson, we will:
 
-class Department:
+- Update the `Employee` class to add a new attribute to model the one-to-many
+  relationship.
+- Update the `Employee` class methods to store and manage the relationship in
+  the "employees" database.
+- Update the `Department` class to add a new method to **compute** (not store) a
+  list of associated `Employee` instances.
 
-    # Dictionary of objects saved to the database.
-    all = {}
+---
 
-    def __init__(self, name, location, id=None):
-        self.id = id
-        self.name = name
-        self.location = location
+## Mapping a one-to-many relationship
 
-    def __repr__(self):
-        return f"<Department {self.id}: {self.name}, {self.location}>"
+The concept of **single source of truth** states we should design our software
+and data to avoid redundancy. In terms of relational database design, we want to
+store the relationship between two entities in just one place within the
+database. We do this to avoid issues that often arise when redundant data is not
+updated in a consistent manner.
 
-    @property
-    def name(self):
-        return self._name
+When we have a relationship between two classes, we need to figure out where to
+store the relationship. For the one-to-many relationship, the class (or entity)
+on the "many" side is the owner of the relationship and is responsible for
+storing the relationship. Why? Beside each object on the "many" side (i.e.
+Employee) is related to just one entity on the "one" side (i.e. Department),
+thus each employee only needs to store a single value to maintain the
+relationship with its department.
 
-    @name.setter
-    def name(self, name):
-        if isinstance(name, str) and len(name):
-            self._name = name
-        else:
-            raise ValueError(
-                "Name must be a non-empty string"
-            )
+![owning side](https://curriculum-content.s3.amazonaws.com/7134/python-p3-v2-orm/owning_side.png)
 
-    @property
-    def location(self):
-        return self._location
+`Employee` is on the many side of the relationship, thus it **owns** and manages
+the relationship by storing a single piece of data about the associated
+`Department`.
 
-    @location.setter
-    def location(self, location):
-        if isinstance(location, str) and len(location):
-            self._location = location
-        else:
-            raise ValueError(
-                "Location must be a non-empty string"
-            )
+- The "Employee" class will have an attribute `department_id` to reference the
+  id of the associated `Department` object.
+- The "employees" table will contain a column `department_id` to store a foreign
+  key reference to the "departments" table.
 
-    # Existing ORM methods ....
+`Department` is on the "one" side of the relationship, thus it should not
+**store** a list of the associated `Employee` instances. Instead, a list of the
+many `Employee` objects associated with the department will be **computed** by
+looking at the `department_id` foreign key value stored with each employee.
 
-```
+---
 
-We'll also update the `Employee` class to add property methods to manage the
-`name`, `job_title` and `department_id` attributes. Note the `department_id`
-setter method checks to ensure we are assigning a valid department by checking
-the foreign key reference in the database:
+## Updating the `Employee` class to store the relationship
+
+Let's update the `Employee` class to store the relationship to `Department` by
+making the following changes:
+
+- Import the `Department` class.
+- Update the `__init__` method to add a parameter `department_id` and store the
+  value in a new attribute with the same name.
+- Update the `__repr__` method to include the value of the new attribute.
 
 ```py
 from __init__ import CURSOR, CONN
@@ -121,94 +121,206 @@ class Employee:
 
     def __repr__(self):
         return (
-            f"<Employee {self.id}: {self.name}, {self.job_title}, "
-            + f"Department: {self.department.name} >"
+            f"<Employee {self.id}: {self.name}, {self.job_title}, " +
+            f"Department ID: {self.department_id}>"
         )
 
-    @property
-    def name(self):
-        return self._name
+    # existing ORM methods ...
+```
 
-    @name.setter
-    def name(self, name):
-        if isinstance(name, str) and len(name):
-            self._name = name
-        else:
-            raise ValueError(
-                "Name must be a non-empty string"
-            )
+Next, we'll update the `create_table` method to add a column named
+`department_id` to store the relationship as a foreign key in the "employees"
+table:
 
-    @property
-    def job_title(self):
-        return self._job_title
+```py
+@classmethod
+def create_table(cls):
+    """ Create a new table to persist the attributes of Employee instances """
+    sql = """
+        CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        job_title TEXT,
+        department_id INTEGER,
+        FOREIGN KEY (department_id) REFERENCES departments(id))
+    """
+    CURSOR.execute(sql)
+    CONN.commit()
+```
 
-    @job_title.setter
-    def job_title(self, job_title):
-        if isinstance(job_title, str) and len(job_title):
-            self._job_title = job_title
-        else:
-            raise ValueError(
-                "job_title must be a non-empty string"
-            )
+We need up adapt the `save`, `update`, and `create` methods to persist the new
+relationship by storing the department id in the "employees" table:
 
-    @property
-    def department_id(self):
-        return self._department_id
+```py
+def save(self):
+        """ Insert a new row with the name, job title, and department id values of the current Employee object.
+        Update object id attribute using the primary key value of new row.
+        Save the object in local dictionary using table row's PK as dictionary key"""
+        sql = """
+                INSERT INTO employees (name, job_title, department_id)
+                VALUES (?, ?, ?)
+        """
 
-    @department_id.setter
-    def department_id(self, department_id):
-        if type(department_id) is int and Department.find_by_id(department_id):
-            self._department_id = department_id
-        else:
-            raise ValueError(
-                "department_id must reference a department in the database")
+        CURSOR.execute(sql, (self.name, self.job_title, self.department_id))
+        CONN.commit()
 
-     # Existing ORM methods ....
+        self.id = CURSOR.lastrowid
+        type(self).all[self.id] = self
+
+    def update(self):
+        """Update the table row corresponding to the current Employee object."""
+        sql = """
+            UPDATE employees
+            SET name = ?, job_title = ?, department_id = ?
+            WHERE id = ?
+        """
+        CURSOR.execute(sql, (self.name, self.job_title,
+                             self.department_id, self.id))
+        CONN.commit()
+
+    @classmethod
+    def create(cls, name, job_title, department_id):
+        """ Initialize a new Employee object and save the object to the database """
+        employee = cls(name, job_title, department_id)
+        employee.save()
+        return employee
 
 ```
 
-The `lib/testing` folder has two new test files for testing the properties,
-`department_property_test.py` and `employee_property_test.py`. Run the tests to
-ensure the property validations work correctly:
+The final change to the `Employee` class is to update the `instance_from_db`
+method to include the department id from the table row.
 
-```bash
-pytest -x
+```py
+@classmethod
+def instance_from_db(cls, row):
+    """Return an Employee object having the attribute values from the table row."""
+
+    # Check the dictionary for  existing instance using the row's primary key
+    employee = cls.all.get(row[0])
+    if employee:
+        # ensure attributes match row values in case local instance was modified
+        employee.name = row[1]
+        employee.job_title = row[2]
+        employee.department_id = row[3]
+    else:
+        # not in dictionary, create new instance and add to dictionary
+        employee = cls(row[1], row[2], row[3])
+        employee.id = row[0]
+        cls.all[employee.id] = employee
+    return employee
 ```
 
-You can also use an `ipdb` session to test the properties.
+## Updating the `Department` class to compute associated `Employee` instances
+
+Since `Department` is not on the owning side of the relationship, we won't store
+anything about employees in the "departments" table. But we might want to get a
+list of all employees that work for a department. We'll add a method to the
+`Department` class that accomplishes this task:
+
+- query the "employees" table for rows that contain a foreign key value that
+  matches the current department's id.
+- map the row data to an `Employee` instance.
+
+Note that we import the `Employee` class within the function definition to
+issues with circular imports (since the `Employee` class imports the
+`Department` class as well).
+
+```py
+from __init__ import CURSOR, CONN
+
+class Department:
+
+    # existing attributes and methods ...
+
+    def employees(self):
+        """Return list of employees associated with current department"""
+        from employee import Employee
+        sql = """
+            SELECT * FROM employees
+            WHERE department_id = ?
+        """
+        CURSOR.execute(sql, (self.id,),)
+
+        rows = CURSOR.fetchall()
+        return [
+            Employee.instance_from_db(row) for row in rows
+        ]
+```
+
+## Exploring the one-to-many relationship
+
+The file `lib/debug.py` has been updated to initialize the database with two
+departments and several employees. The code generates fake names for the
+employees, and picks a random job title and department for each employee.
+
+Run the file to recreate the database with sample data:
 
 ```bash
 python lib/debug.py
 ```
 
-Type each statement one at a time into the `ipbd>` prompt:
+In the `ipdb` session, you can explore the table data using the ORM methods:
 
 ```py
 ipdb> Department.get_all()
 [<Department 1: Payroll, Building A, 5th Floor>, <Department 2: Human Resources, Building C, East Wing>]
-ipdb> payroll = Department.find_by_name("Payroll")
-ipdb> payroll
-<Department 1: Payroll, Building A, 5th Floor>
-ipdb> payroll.location = 7
-*** ValueError: Location must be a non-empty string
-ipdb>
 ```
 
-Let's try to set an invalid department id for an employee:
+```py
+ipdb> Employee.get_all()
+[<Employee 1: Amir, Accountant, Department ID: 1>, <Employee 2: Bola, Manager, Department ID: 1>, <Employee 3: Charlie, Manager, Department ID: 2>, <Employee 4: Dani, Benefits Coordinator, Department ID: 2>, <Employee 5: Hao, New Hires Coordinator, Department ID: 2>]
+```
 
-```bash
+An employee works in one department. Let's get the first employee:
+
+```py
 ipdb> employee = Employee.find_by_id(1)
 ipdb> employee
 <Employee 1: Amir, Accountant, Department ID: 1>
-ipdb> employee.department_id = 1000
-*** ValueError: department_id must reference a department in the database
+
+We can use the employee `department_id` value to get the single associated `Department` instance:
+
+ipdb> Department.find_by_id(employee.department_id)
+<Department 1: Payroll, Building A, 5th Floor>
+```
+
+A department may have many employees. Let's select the payroll department:
+
+```py
+ipdb> payroll = Department.find_by_id(1)
+ipdb> payroll
+<Department 1: Payroll, Building A, 5th Floor>
+```
+
+We can call the `employees()` method to get the list of employees that work in
+the payroll department.
+
+```py
+ipdb> payroll.employees()
+[<Employee 1: Amir, Accountant, Department ID: 1>, <Employee 2: Bola, Manager, Department ID: 1>]
+```
+
+You can also use the SQLITE EXPLORER to view the relationship.
+
+## Testing the `Employee` and `Department` classes
+
+The `lib/testing` folder contains the files `department_orm_test.py` and
+`employee_orm_test.py` to test the `Department` and `Employee` classes. Run the
+tests and confirm they pass:
+
+```bash
+pytest -x
 ```
 
 ## Conclusion
 
-Properties manage the access and mutation of attributes. We can use property
-setter methods to ensure we assign valid values prior to persisting objects to
-the database.
+In this lesson we've seen how to persist a one-to-many relationship between
+classes. The class or entity on the "many" side of the relationship is
+responsible for storing and maintaining the relationship, since it only needs to
+store a single value to reference the associated object/entity on the "one"
+side.
+
+---
 
 ## Solution Code
 
@@ -229,32 +341,6 @@ class Department:
 
     def __repr__(self):
         return f"<Department {self.id}: {self.name}, {self.location}>"
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, name):
-        if isinstance(name, str) and len(name):
-            self._name = name
-        else:
-            raise ValueError(
-                "Name must be a non-empty string"
-            )
-
-    @property
-    def location(self):
-        return self._location
-
-    @location.setter
-    def location(self, location):
-        if isinstance(location, str) and len(location):
-            self._location = location
-        else:
-            raise ValueError(
-                "Location must be a non-empty string"
-            )
 
     @classmethod
     def create_table(cls):
@@ -400,6 +486,7 @@ class Department:
 from __init__ import CURSOR, CONN
 from department import Department
 
+
 class Employee:
 
     # Dictionary of objects saved to the database.
@@ -416,44 +503,6 @@ class Employee:
             f"<Employee {self.id}: {self.name}, {self.job_title}, " +
             f"Department ID: {self.department_id}>"
         )
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, name):
-        if isinstance(name, str) and len(name):
-            self._name = name
-        else:
-            raise ValueError(
-                "Name must be a non-empty string"
-            )
-
-    @property
-    def job_title(self):
-        return self._job_title
-
-    @job_title.setter
-    def job_title(self, job_title):
-        if isinstance(job_title, str) and len(job_title):
-            self._job_title = job_title
-        else:
-            raise ValueError(
-                "job_title must be a non-empty string"
-            )
-
-    @property
-    def department_id(self):
-        return self._department_id
-
-    @department_id.setter
-    def department_id(self, department_id):
-        if type(department_id) is int and Department.find_by_id(department_id):
-            self._department_id = department_id
-        else:
-            raise ValueError(
-                "department_id must reference a department in the database")
 
     @classmethod
     def create_table(cls):
@@ -582,4 +631,5 @@ class Employee:
 
         row = CURSOR.execute(sql, (name,)).fetchone()
         return cls.instance_from_db(row) if row else None
+
 ```
